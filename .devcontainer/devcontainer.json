@@ -1,0 +1,42 @@
+{
+    "name": "PETR (CUDA 11.6 + TensorRT 8.2)",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": ".."
+    },
+    "runArgs": [
+        "--gpus=all",
+        "--shm-size=16g",
+        "--ipc=host",
+        "--ulimit=memlock=-1",
+        "--ulimit=stack=67108864"
+    ],
+    "containerEnv": {
+        "NVIDIA_VISIBLE_DEVICES": "all",
+        "NVIDIA_DRIVER_CAPABILITIES": "compute,utility,video",
+        "TORCH_CUDA_ARCH_LIST": "8.9",
+        "FORCE_CUDA": "1"
+    },
+    "workspaceFolder": "/workspace/PETR",
+    "workspaceMount": "source=${localWorkspaceFolder},target=/workspace/PETR,type=bind,consistency=cached",
+    "mounts": [
+        "source=${localEnv:HOME}/.cache,target=/root/.cache,type=bind,consistency=cached"
+    ],
+    "remoteUser": "root",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "ms-toolsai.jupyter",
+                "ms-azuretools.vscode-docker",
+                "njpwerner.autodocstring",
+                "eamodio.gitlens"
+            ],
+            "settings": {
+                "python.defaultInterpreterPath": "/opt/conda/bin/python",
+                "terminal.integrated.defaultProfile.linux": "bash"
+            }
+        }
+    }
+}
