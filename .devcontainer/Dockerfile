@@ -34,26 +34,35 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
-# Pin numpy/numba to versions PETR requirements.txt expects, before MM* install.
-# (numpy<1.20 / numba==0.48.0 are required by mmdet3d 0.17.1)
-# opencv-python is pinned to 4.5.5.64 — last cp36-abi3 wheel built against the
-# numpy 1.19 C ABI (API 0xd). Newer wheels (>=4.6) require numpy>=1.20 ABI and
-# fail at import with "module compiled against API version 0xf but this version
-# of numpy is 0xd". The NGC base image also ships its own cv2 binding under
-# /opt/conda/lib/python3.8/site-packages/cv2/python-3.8/, which `pip uninstall`
-# does not remove and which the cv2 loader prefers — wipe it before installing.
+# numpy is pinned to 1.22.4 to match the NGC PyTorch 22.04 ABI (API 0xf).
+# mmdet3d 0.17.1 declares numpy<1.20, but PyTorch in this image was built
+# against the 1.20+ ABI and fails at tensor.numpy() with "Numpy is not
+# available" if older numpy is installed — so we ignore the mmdet3d pin.
+# networkx is pinned to 2.5: trimesh requires `arbitrary_element` which was
+# removed in networkx 3.0, and 2.8.x has a circular import issue here.
+# psutil is pinned to 5.9.0 to match the C extension shipped with the base
+# image (mismatched versions error with "module 'psutil._psutil_linux' has
+# no attribute 'getpagesize'").
+# opencv-python is pinned to 4.5.5.64 — last cp36-abi3 wheel built against
+# the numpy 1.19 C ABI; newer wheels are still fine with numpy 1.22 here.
+# The NGC base image ships its own cv2 binding under
+# /opt/conda/lib/python3.8/site-packages/cv2/python-3.8/, which
+# `pip uninstall` does not remove and which the cv2 loader prefers — wipe it
+# before installing.
 RUN rm -rf /opt/conda/lib/python3.8/site-packages/cv2 \
     && pip install --no-cache-dir \
-        "numpy<1.20.0" \
+        "numpy==1.22.4" \
         "numba==0.48.0" \
-        "networkx>=2.2,<2.3" \
+        "networkx==2.5" \
+        "psutil==5.9.0" \
         lyft_dataset_sdk \
-        nuscenes-devkit \
+        "nuscenes-devkit==1.1.9" \
         plyfile \
         scikit-image \
         tensorboard \
         "trimesh>=2.35.39,<2.35.40" \
         "opencv-python==4.5.5.64" \
+        einops \
         ipython \
     || true
 
