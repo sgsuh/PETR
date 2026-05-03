@@ -14,7 +14,7 @@
     "containerEnv": {
         "NVIDIA_VISIBLE_DEVICES": "all",
         "NVIDIA_DRIVER_CAPABILITIES": "compute,utility,video",
-        "TORCH_CUDA_ARCH_LIST": "8.9",
+        "TORCH_CUDA_ARCH_LIST": "8.6+PTX",
         "FORCE_CUDA": "1"
     },
     "workspaceFolder": "/workspace/PETR",

@@ -18,7 +18,7 @@ set -euo pipefail
 
 CU_VERSION="${CU_VERSION:-cu116}"
 TORCH_VERSION="${TORCH_VERSION:-torch1.12.0}"
-MMCV_VERSION="${MMCV_VERSION:-1.6.2}"
+MMCV_VERSION="${MMCV_VERSION:-1.6.0}"
 MMDET_VERSION="${MMDET_VERSION:-v2.24.1}"
 MMSEG_VERSION="${MMSEG_VERSION:-0.20.2}"
 MMDET3D_VERSION="${MMDET3D_VERSION:-v0.17.1}"
@@ -53,7 +53,7 @@ else
     pushd "$WORKDIR/mmdetection" >/dev/null
     git checkout "$MMDET_VERSION"
     $PIP install -r requirements/build.txt
-    $PY setup.py develop
+    $PY setup.py develop --no-deps
     popd >/dev/null
 fi
 
@@ -74,7 +74,7 @@ else
     pushd "$WORKDIR/mmdetection3d" >/dev/null
     git checkout "$MMDET3D_VERSION"
     $PIP install -r requirements/build.txt
-    $PY setup.py develop
+    $PY setup.py develop --no-deps
     popd >/dev/null
 fi
 
