@@ -19,15 +19,13 @@
         "FORCE_CUDA": "1",
         "DISPLAY": "${localEnv:DISPLAY}",
         "QT_X11_NO_MITSHM": "1",
-        "XAUTHORITY": "/tmp/.docker.xauth",
         "LIBGL_ALWAYS_INDIRECT": "0"
     },
     "workspaceFolder": "/workspace/PETR",
     "workspaceMount": "source=${localWorkspaceFolder},target=/workspace/PETR,type=bind,consistency=cached",
     "mounts": [
         "source=${localEnv:HOME}/.cache,target=/root/.cache,type=bind,consistency=cached",
-        "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind,consistency=cached",
-        "source=${localEnv:HOME}/.Xauthority,target=/root/.Xauthority,type=bind,consistency=cached"
+        "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind,consistency=cached"
     ],
     "initializeCommand": "xhost +local:docker > /dev/null 2>&1 || true",
     "remoteUser": "root",

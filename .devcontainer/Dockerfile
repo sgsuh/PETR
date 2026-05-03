@@ -38,6 +38,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # mmdet3d 0.17.1 declares numpy<1.20, but PyTorch in this image was built
 # against the 1.20+ ABI and fails at tensor.numpy() with "Numpy is not
 # available" if older numpy is installed — so we ignore the mmdet3d pin.
+# numba is pinned to 0.53.1 (the version shipped by the NGC base image).
+# mmdet3d 0.17.1 declares numba==0.48.0, but 0.48 requires numpy<1.18 which
+# conflicts with the numpy pin above — so we ignore the mmdet3d pin and
+# patch the one stale `numba.errors` import below in the mmdet3d stage.
 # networkx is pinned to 2.5: trimesh requires `arbitrary_element` which was
 # removed in networkx 3.0, and 2.8.x has a circular import issue here.
 # psutil is pinned to 5.9.0 to match the C extension shipped with the base
@@ -45,6 +49,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # no attribute 'getpagesize'").
 # opencv-python is pinned to 4.5.5.64 — last cp36-abi3 wheel built against
 # the numpy 1.19 C ABI; newer wheels are still fine with numpy 1.22 here.
+# scikit-image is pinned to 0.19.3 — 0.20+ requires networkx>=2.8, which
+# conflicts with the networkx==2.5 pin needed by trimesh.
+# nuscenes-devkit 1.1.11 ships DetectionConfig.class_names as a dict_keys
+# view, which is not picklable; that breaks DataLoader spawn workers in
+# multi_gpu_test. We sed-patch the install to wrap it in list().
 # The NGC base image ships its own cv2 binding under
 # /opt/conda/lib/python3.8/site-packages/cv2/python-3.8/, which
 # `pip uninstall` does not remove and which the cv2 loader prefers — wipe it
@@ -52,19 +61,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN rm -rf /opt/conda/lib/python3.8/site-packages/cv2 \
     && pip install --no-cache-dir \
         "numpy==1.22.4" \
-        "numba==0.48.0" \
+        "numba==0.53.1" \
         "networkx==2.5" \
         "psutil==5.9.0" \
         lyft_dataset_sdk \
-        "nuscenes-devkit==1.1.9" \
+        "nuscenes-devkit==1.1.11" \
         plyfile \
-        scikit-image \
+        "scikit-image==0.19.3" \
         tensorboard \
         "trimesh>=2.35.39,<2.35.40" \
         "opencv-python==4.5.5.64" \
         einops \
         ipython \
-    || true
+        terminaltables \
+    && sed -i 's|self.class_names = self.class_range.keys()|self.class_names = list(self.class_range.keys())|' \
+        /opt/conda/lib/python3.8/site-packages/nuscenes/eval/detection/data_classes.py
 
 # --- MM-series stack (matches install.md, versions adjusted for torch 1.12 + cu116) ---
 ARG MMCV_VERSION=1.6.0
@@ -107,12 +118,14 @@ RUN pip install --no-cache-dir "mmsegmentation==${MMSEG_VERSION}" \
 #   - THCudaCheck             -> AT_CUDA_CHECK              (drop-in CUDA error check)
 #   - THCCeilDiv              -> at::ceil_div               (drop-in)
 #   - AT_CHECK                -> TORCH_CHECK                (renamed in 1.5)
-# Two more in-place patches on top:
+# Three more in-place patches on top:
 #   - bump mmcv_maximum_version 1.4.0 -> 1.7.0 (same reason as mmseg above)
 #   - add force=True to spconv CONV_LAYERS.register_module() — mmcv >=1.5
 #     ships its own SparseConv2d/3d under the same registry name, so the
 #     mmdet3d registrations otherwise raise "already registered". Forcing
 #     override picks mmdet3d's variants, which PETR's configs reference.
+#   - rewrite `from numba.errors` -> `from numba.core.errors`. The old
+#     module path was removed in numba 0.49; we run 0.53.1 (see numba pin).
 RUN git clone https://github.com/open-mmlab/mmdetection3d.git /workspace/mmdetection3d \
     && cd /workspace/mmdetection3d \
     && git checkout ${MMDET3D_VERSION} \
@@ -126,6 +139,8 @@ RUN git clone https://github.com/open-mmlab/mmdetection3d.git /workspace/mmdetec
     && sed -i "s/^mmcv_maximum_version = '1.4.0'/mmcv_maximum_version = '1.7.0'/" mmdet3d/__init__.py \
     && sed -i 's/@CONV_LAYERS.register_module()$/@CONV_LAYERS.register_module(force=True)/' \
         mmdet3d/ops/spconv/conv.py \
+    && sed -i 's|from numba.errors import|from numba.core.errors import|' \
+        mmdet3d/datasets/pipelines/data_augment_utils.py \
     && pip install --no-cache-dir -r requirements/build.txt \
     && python3 setup.py develop --no-deps
 
