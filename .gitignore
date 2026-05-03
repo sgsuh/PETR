@@ -118,6 +118,7 @@ work_dirs/
 ckpts/
 data/
 mmdetection3d/
+mmdetection3d
 exps/
 *~
 mmdet3d/.mim
