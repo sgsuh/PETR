@@ -180,10 +180,10 @@ def parse_args():
 
     parser.add_argument("--config",
                         type=str,
-                        default="projects/configs/petr/petr_r50dcn_gridmask_p4_mini.py")
+                        default="projects/configs/petr/petr_vovnet_gridmask_p4_800x320_export.py")
     parser.add_argument("--checkpoint",
                         type=str,
-                        default="ckpts/epoch_24.pth")
+                        default="ckpts/petr-vov-p4-800x320/epoch_24.pth")
     parser.add_argument("--img_height",
                         type=int,
                         default=512)
@@ -198,11 +198,11 @@ def parse_args():
                         default=1)
     parser.add_argument("--onnx_path",
                         type=str,
-                        default="ckpts/epoch_24.onnx")
+                        default="ckpts/petr-vov-p4-800x320/epoch_24.onnx")
     parser.add_argument("--input_names",
-                        default=["img", "img2lidars"])
+                        default=["input_0", "input_1"])
     parser.add_argument("--output_names",
-                        default=["all_cls_scores", "all_bbox_preds"])
+                        default=["output_0", "output_1"])
     parser.add_argument("--opset",
                         type=int,
                         default=11)

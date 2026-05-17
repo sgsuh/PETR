@@ -54,6 +54,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # nuscenes-devkit 1.1.11 ships DetectionConfig.class_names as a dict_keys
 # view, which is not picklable; that breaks DataLoader spawn workers in
 # multi_gpu_test. We sed-patch the install to wrap it in list().
+# pycuda is pinned to 2022.2.2 — the sdist for 2024+ builds against the
+# numpy 0x10 C ABI (numpy>=1.23) and fails to import here against the
+# numpy 1.22.4 ABI (0xf) with "module compiled against API version 0x10".
 # The NGC base image ships its own cv2 binding under
 # /opt/conda/lib/python3.8/site-packages/cv2/python-3.8/, which
 # `pip uninstall` does not remove and which the cv2 loader prefers — wipe it
@@ -74,6 +77,8 @@ RUN rm -rf /opt/conda/lib/python3.8/site-packages/cv2 \
         einops \
         ipython \
         terminaltables \
+        filterpy \
+        "pycuda==2022.2.2" \
     && sed -i 's|self.class_names = self.class_range.keys()|self.class_names = list(self.class_range.keys())|' \
         /opt/conda/lib/python3.8/site-packages/nuscenes/eval/detection/data_classes.py
 
