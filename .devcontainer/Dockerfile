@@ -192,6 +192,17 @@ RUN curl -fsSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
 ENV ROS_DISTRO=foxy \
     RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
+# ros-foxy-desktop pulls libopenmpi3 (via libvtk7.1p / libhdf5-openmpi-103 /
+# libboost-mpi) into /usr/lib/x86_64-linux-gnu/. That dir is a built-in
+# trusted path for ldconfig, so its libopen-pal.so.40 / libopen-rte.so.40
+# win the cache over HPC-X's copies under /opt/hpcx/ompi/lib. Meanwhile
+# libtorch_global_deps.so has RUNPATH=$ORIGIN:/opt/hpcx/ompi/lib:... and
+# pulls HPC-X's libmpi.so.40 — which then resolves libopen-pal against the
+# system Ubuntu OpenMPI and crashes on a missing vendored-hwloc symbol
+# (opal_hwloc201_hwloc_get_type_depth). Prepending HPC-X here keeps the
+# OpenMPI stack internally consistent for `import torch`.
+ENV LD_LIBRARY_PATH=/opt/hpcx/ompi/lib:${LD_LIBRARY_PATH}
+
 RUN echo "source /opt/ros/foxy/setup.bash" >> /root/.bashrc
 
 WORKDIR /workspace/PETR
