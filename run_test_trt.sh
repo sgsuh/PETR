@@ -9,7 +9,7 @@ ENGINE=${ENGINE:-ckpts/petr-vov-p4-800x320/epoch_24.engine}
 DATA_ROOT=${DATA_ROOT:-data/nuscenes/}
 ANN_FILE=${ANN_FILE:-data/nuscenes/nuscenes_infos_val.pkl}
 OUT=${OUT:-work_dirs/petr_vov_trt/results_eval.pkl}
-TRACK=${TRACK:-1}
+TRACK=${TRACK:-0}
 
 if [ ! -f "$CONFIG" ]; then
     echo "Config not found: $CONFIG"
