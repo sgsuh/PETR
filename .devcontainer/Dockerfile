@@ -154,6 +154,46 @@ RUN git clone https://github.com/open-mmlab/mmdetection3d.git /workspace/mmdetec
     && pip install --no-cache-dir -r requirements/build.txt \
     && python3 setup.py develop --no-deps
 
+# --- ROS2 Foxy (apt, OSRF packages.ros.org) ---
+# NGC 22.12 is Ubuntu 20.04 (Focal), which is Foxy's official binary target,
+# so the apt route just works. rclpy lands in /opt/ros/foxy and uses the
+# same /usr/bin/python (3.8) as the PETR stack — a single process can
+# `import rclpy` and `import torch` together.
+#
+# Foxy is EOL (June 2023): no security patches, no new packages. Acceptable
+# for inference / research, risky for long-running fleets. If you need an
+# actively-maintained distro, the alternative is bumping the base image to
+# an Ubuntu 22.04 NGC tag and switching to Humble — that breaks the pinned
+# TRT 8.5 / PyTorch 1.14 stack and forces re-export of the ONNX/engine.
+#
+# /opt/ros/foxy/setup.bash is auto-sourced in /root/.bashrc. It prepends
+# /opt/ros/foxy/lib to LD_LIBRARY_PATH and /opt/ros/foxy/lib/python3.8/
+# site-packages to PYTHONPATH, neither of which shadows the PETR/TRT libs
+# (TRT lives in /usr/local/cuda + /usr/local/lib, PETR pip packages in
+# /usr/local/lib/python3.8/dist-packages).
+RUN curl -fsSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+        -o /usr/share/keyrings/ros-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu focal main" \
+        > /etc/apt/sources.list.d/ros2.list \
+    && apt-get update && apt-get install -y --no-install-recommends \
+        ros-foxy-desktop \
+        ros-foxy-cv-bridge \
+        ros-foxy-vision-msgs \
+        ros-foxy-image-transport \
+        ros-foxy-rmw-cyclonedds-cpp \
+        python3-colcon-common-extensions \
+        python3-rosdep \
+        python3-argcomplete \
+    && rosdep init \
+    && rm -rf /var/lib/apt/lists/*
+
+# Default RMW: Cyclone DDS (more reliable than FastDDS on --network=host).
+# ROS_DOMAIN_ID is intentionally unset — pick per workspace.
+ENV ROS_DISTRO=foxy \
+    RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+
+RUN echo "source /opt/ros/foxy/setup.bash" >> /root/.bashrc
+
 WORKDIR /workspace/PETR
 
 CMD ["/bin/bash"]

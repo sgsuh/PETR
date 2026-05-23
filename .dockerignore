@@ -1,0 +1,34 @@
+# VCS
+.git
+.gitignore
+
+# Editor / IDE
+.vscode
+.idea
+
+# Python caches
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.hypothesis
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+
+# Build artefacts
+build
+dist
+*.egg-info
+
+# Data / weights / experiment outputs — never needed in the image
+data
+ckpts
+work_dirs
+outputs
+logs
+
+# Dev container itself (build context is the parent already)
+.devcontainer

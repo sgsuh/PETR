@@ -1,5 +1,5 @@
 {
-    "name": "PETR (CUDA 11.8 + TensorRT 8.5)",
+    "name": "PETR (CUDA 11.8 + TensorRT 8.5 + ROS2 Foxy)",
     "build": {
         "dockerfile": "Dockerfile",
         "context": ".."
