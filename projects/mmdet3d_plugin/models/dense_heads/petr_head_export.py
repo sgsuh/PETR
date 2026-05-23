@@ -154,7 +154,7 @@ class PETRHeadExport(PETRHead):
 
             if self.with_multiview:
                 sin_embed = self.positional_encoding(masks)
-                sin_embed = self.adpat_pos3d(sin_embed.flatten(0, 1)).view(x.size())
+                sin_embed = self.adapt_pos3d(sin_embed.flatten(0, 1)).view(x.size())
                 pos_embed = pos_embed + sin_embed
             else:
                 pos_embeds = []
@@ -229,3 +229,48 @@ class PETRHeadExport(PETRHead):
             ret_list.append([bboxes, scores, labels])
 
         return ret_list
+
+    def get_bboxes_export(self, preds_dicts):
+        """ONNX-friendly batched decode.
+
+        Mirrors NMSFreeCoder.decode_single but keeps static (max_num, 9)
+        shapes: no boolean post_center_range mask, no Python-side per-sample
+        list. denormalize_bbox is inlined for the 10D normalized PETR format
+        ([cx, cy, w, l, cz, h, sin, cos, vx, vy]) to avoid the size>8 branch
+        that produces an IIfConditional in the ONNX graph (TRT 8.5 rejects).
+        Z is shifted from gravity-center to bottom-center to match
+        LiDARInstance3DBoxes(origin=(0.5, 0.5, 0)).
+        """
+        cls_scores_all = preds_dicts["all_cls_scores"][-1]
+        bbox_preds_all = preds_dicts["all_bbox_preds"][-1]
+        max_num = self.bbox_coder.max_num
+        num_classes = self.bbox_coder.num_classes
+        batch_size = cls_scores_all.size(0)
+
+        out_bboxes, out_scores, out_labels = [], [], []
+        for i in range(batch_size):
+            cls_scores = cls_scores_all[i].sigmoid()
+            scores, indexs = cls_scores.view(-1).topk(max_num)
+            labels = indexs % num_classes
+            bbox_index = indexs // num_classes
+            bp = bbox_preds_all[i][bbox_index]
+
+            cx = bp[..., 0:1]
+            cy = bp[..., 1:2]
+            w = bp[..., 2:3].exp()
+            l = bp[..., 3:4].exp()
+            cz = bp[..., 4:5]
+            h = bp[..., 5:6].exp()
+            rot = torch.atan2(bp[..., 6:7], bp[..., 7:8])
+            vx = bp[..., 8:9]
+            vy = bp[..., 9:10]
+            cz_bottom = cz - h * 0.5
+            bboxes = torch.cat([cx, cy, cz_bottom, w, l, h, rot, vx, vy], dim=-1)
+
+            out_bboxes.append(bboxes)
+            out_scores.append(scores)
+            out_labels.append(labels.float())
+
+        return (torch.stack(out_bboxes, dim=0),
+                torch.stack(out_scores, dim=0),
+                torch.stack(out_labels, dim=0))

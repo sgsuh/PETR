@@ -19,11 +19,28 @@ import onnx
 
 from mmcv import Config
 from mmcv.runner import load_checkpoint
+from torch.onnx import register_custom_op_symbolic
 
 from mmdet3d.models import build_model
 from mmdet.models.utils.transformer import inverse_sigmoid
 
 from projects.mmdet3d_plugin.models.dense_heads.petr_head import pos2posemb3d
+
+
+def _atan2_symbolic(g, y, x):
+    # PyTorch 1.14's ONNX exporter has no atan2 symbolic at any opset, so
+    # express it as 2*atan(y / (sqrt(x^2 + y^2) + x)). Branchless, matches
+    # atan2 everywhere except the y=0, x<0 ray (atan2 = pi) where we get 0;
+    # that ray is not a relevant yaw for detected boxes here.
+    sum_sq = g.op("Add", g.op("Mul", x, x), g.op("Mul", y, y))
+    denom = g.op("Add", g.op("Sqrt", sum_sq), x)
+    eps = g.op("Constant", value_t=torch.tensor(1e-12, dtype=torch.float))
+    ratio = g.op("Div", y, g.op("Add", denom, eps))
+    two = g.op("Constant", value_t=torch.tensor(2.0, dtype=torch.float))
+    return g.op("Mul", two, g.op("Atan", ratio))
+
+
+register_custom_op_symbolic("aten::atan2", _atan2_symbolic, 14)
 
 
 class PETRExportWrapper(nn.Module):
@@ -90,7 +107,8 @@ class PETRExportWrapper(nn.Module):
 
         i2l = img2lidars.to(dtype).view(B, N, 1, 1, 1, 4, 4).expand(B, N, W, H, D, 4, 4)
         coords = coords.view(1, 1, W, H, D, 4, 1).expand(B, N, W, H, D, 4, 1)
-        coords3d = torch.matmul(i2l, coords).squeeze(-1)[..., :3]
+        # `.squeeze(-1)` trace becomes an If(dim==1) in ONNX — index instead.
+        coords3d = torch.matmul(i2l, coords)[..., :3, 0]
 
         pr = head.position_range
         coords3d[..., 0:1] = (coords3d[..., 0:1] - pr[0]) / (pr[3] - pr[0])
@@ -142,7 +160,7 @@ class PETRExportWrapper(nn.Module):
         reference_points = reference_points.unsqueeze(0).repeat(B, 1, 1)
 
         outs_dec, _ = head.transformer(x, masks, query_embeds, pos_embed, head.reg_branches)
-        outs_dec = torch.nan_to_num(outs_dec)
+        # `torch.nan_to_num` exports as IsInf+Where which TRT 8.5 parser cannot import.
 
         outputs_classes = []
         outputs_coords = []
@@ -172,7 +190,14 @@ class PETRExportWrapper(nn.Module):
         # img2lidars: (B, N, 4, 4)
         H, W = img.shape[-2], img.shape[-1]
         feats = self._extract_img_feats(img)
-        return self._head_forward(feats, img2lidars, pad_h=H, pad_w=W)
+        all_cls_scores, all_bbox_preds = self._head_forward(
+            feats, img2lidars, pad_h=H, pad_w=W
+        )
+        preds = {"all_cls_scores": all_cls_scores,
+                 "all_bbox_preds": all_bbox_preds,
+                 "enc_cls_scores": None,
+                 "enc_bbox_preds": None}
+        return self.model.pts_bbox_head.get_bboxes_export(preds)
 
 
 def parse_args():
@@ -186,10 +211,10 @@ def parse_args():
                         default="ckpts/petr-vov-p4-800x320/epoch_24.pth")
     parser.add_argument("--img_height",
                         type=int,
-                        default=512)
+                        default=320)
     parser.add_argument("--img_width",
                         type=int,
-                        default=1408)
+                        default=800)
     parser.add_argument("--num_samples",
                         type=int,
                         default=6)
@@ -202,10 +227,10 @@ def parse_args():
     parser.add_argument("--input_names",
                         default=["input_0", "input_1"])
     parser.add_argument("--output_names",
-                        default=["output_0", "output_1"])
+                        default=["bboxes", "scores", "labels"])
     parser.add_argument("--opset",
                         type=int,
-                        default=11)
+                        default=14)
 
     args = parser.parse_args()
 

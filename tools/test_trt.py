@@ -24,7 +24,6 @@ sys.path.append("./tools/")
 
 from mmdet3d.core.bbox.structures.lidar_box3d import LiDARInstance3DBoxes
 from mmdet3d.datasets import build_dataloader, build_dataset
-from mmdet.core.bbox.builder import BBOX_CODERS
 
 from singleshot.trt import TRT
 
@@ -107,15 +106,14 @@ def compute_img2lidars(img_metas):
     return torch.from_numpy(np.stack(per_sample, axis=0)).float()
 
 
-def to_decoder_input(cls_scores, bbox_preds):
-    """TRT engine returns the last decoder layer; the coder slices [-1]."""
-    if cls_scores.dim() == 3:
-        cls_scores = cls_scores.unsqueeze(0)
-        bbox_preds = bbox_preds.unsqueeze(0)
-    return {"all_cls_scores": cls_scores,
-            "all_bbox_preds": bbox_preds,
-            "enc_cls_scores": None,
-            "enc_bbox_preds": None}
+def apply_post_center_range(bboxes, scores, labels, post_center_range):
+    """Drop boxes whose center falls outside post_center_range (matches
+    NMSFreeCoder.decode_single's filter; we apply it on CPU after TRT)."""
+    if post_center_range is None:
+        return bboxes, scores, labels
+    pcr = torch.tensor(post_center_range, dtype=bboxes.dtype, device=bboxes.device)
+    mask = (bboxes[..., :3] >= pcr[:3]).all(-1) & (bboxes[..., :3] <= pcr[3:]).all(-1)
+    return bboxes[mask], scores[mask], labels[mask]
 
 
 def apply_tracker(pred_dict, class_names, trackers, args):
@@ -170,13 +168,8 @@ def apply_tracker(pred_dict, class_names, trackers, args):
 
 
 def to_pts_bbox_result(pred_dict, box_type_3d):
-    bboxes = pred_dict["bboxes"].cpu().clone()
-    # NMSFreeCoder returns gravity-center z; LiDARInstance3DBoxes wants
-    # bottom-center z (origin = (0.5, 0.5, 0)). Match get_bboxes() in
-    # PETRHeadExport which subtracts half-height before wrapping.
-    if bboxes.numel() > 0:
-        bboxes[:, 2] = bboxes[:, 2] - bboxes[:, 5] * 0.5
-
+    # z is already gravity→bottom shifted inside get_bboxes_export.
+    bboxes = pred_dict["bboxes"].cpu()
     box_obj = box_type_3d(bboxes, box_dim=bboxes.size(-1))
     return dict(boxes_3d=box_obj,
                 scores_3d=pred_dict["scores"].cpu(),
@@ -208,8 +201,7 @@ def main():
                                    dist=False,
                                    shuffle=False)
 
-    coder_cfg = cfg.model.pts_bbox_head.bbox_coder.copy()
-    bbox_coder = BBOX_CODERS.build(coder_cfg)
+    post_center_range = cfg.model.pts_bbox_head.bbox_coder.get("post_center_range")
 
     class_names = list(cfg.class_names)
     trackers = build_trackers(class_names) if args.track else None
@@ -228,11 +220,14 @@ def main():
         img_metas = data["img_metas"][0].data[0]
         img2lidars = compute_img2lidars(img_metas)
 
-        cls_scores, bbox_preds = trt_model.inference(img, img2lidars)
-        preds = to_decoder_input(cls_scores, bbox_preds)
-        decoded = bbox_coder.decode(preds)
+        out_bboxes, out_scores, out_labels = trt_model.inference(img, img2lidars)
 
-        for b, pred in enumerate(decoded):
+        for b in range(out_bboxes.size(0)):
+            bboxes, scores, labels = apply_post_center_range(
+                out_bboxes[b], out_scores[b], out_labels[b].long(),
+                post_center_range,
+            )
+            pred = {"bboxes": bboxes, "scores": scores, "labels": labels}
             if args.track:
                 pred = apply_tracker(pred, class_names, trackers, args)
             results.append({"pts_bbox": to_pts_bbox_result(pred, img_metas[b]["box_type_3d"])})
