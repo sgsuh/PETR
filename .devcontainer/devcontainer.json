@@ -1,5 +1,5 @@
 {
-    "name": "PETR (CUDA 11.6 + TensorRT 8.2)",
+    "name": "PETR (CUDA 11.8 + TensorRT 8.5)",
     "build": {
         "dockerfile": "Dockerfile",
         "context": ".."
@@ -15,7 +15,7 @@
     "containerEnv": {
         "NVIDIA_VISIBLE_DEVICES": "all",
         "NVIDIA_DRIVER_CAPABILITIES": "compute,utility,video,graphics,display",
-        "TORCH_CUDA_ARCH_LIST": "8.6+PTX",
+        "TORCH_CUDA_ARCH_LIST": "8.9",
         "FORCE_CUDA": "1",
         "DISPLAY": "${localEnv:DISPLAY}",
         "QT_X11_NO_MITSHM": "1",
@@ -40,7 +40,7 @@
                 "eamodio.gitlens"
             ],
             "settings": {
-                "python.defaultInterpreterPath": "/opt/conda/bin/python",
+                "python.defaultInterpreterPath": "/usr/bin/python",
                 "terminal.integrated.defaultProfile.linux": "bash"
             }
         }

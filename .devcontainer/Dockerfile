@@ -1,14 +1,17 @@
-# NGC PyTorch container: CUDA 11.6 + cuDNN 8.4 + TensorRT 8.2.4 + PyTorch 1.12 + Python 3.8
+# NGC PyTorch container: CUDA 11.8 + cuDNN 8.7 + TensorRT 8.5.1 + PyTorch 1.14 + Python 3.8
 # TensorRT is pre-installed for deployment workflows.
-# RTX 4070 (sm_89) runs via PTX forward-compatibility on CUDA 11.6.
-FROM nvcr.io/nvidia/pytorch:22.04-py3
+# RTX 4070 (sm_89) is natively supported by CUDA 11.8 and TRT 8.5 (Ada Lovelace
+# kernels), so engine builds no longer need PTX forward-compat fallback.
+# 22.04 (TRT 8.2.4) could not compile engines for sm_89; 22.12 is the first NGC
+# tag with TRT 8.5.
+FROM nvcr.io/nvidia/pytorch:22.12-py3
 
 ENV DEBIAN_FRONTEND=noninteractive \
     TZ=Asia/Seoul \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     FORCE_CUDA=1 \
-    TORCH_CUDA_ARCH_LIST="8.6+PTX" \
+    TORCH_CUDA_ARCH_LIST="8.9" \
     MMCV_WITH_OPS=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -34,7 +37,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
-# numpy is pinned to 1.22.4 to match the NGC PyTorch 22.04 ABI (API 0xf).
+# numpy is pinned to 1.22.4 to match the NGC PyTorch 22.12 ABI (API 0xf, same
+# 1.22.x line as 22.04 — keeping the pin keeps the rest of the stack working).
 # mmdet3d 0.17.1 declares numpy<1.20, but PyTorch in this image was built
 # against the 1.20+ ABI and fails at tensor.numpy() with "Numpy is not
 # available" if older numpy is installed — so we ignore the mmdet3d pin.
@@ -57,11 +61,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # pycuda is pinned to 2022.2.2 — the sdist for 2024+ builds against the
 # numpy 0x10 C ABI (numpy>=1.23) and fails to import here against the
 # numpy 1.22.4 ABI (0xf) with "module compiled against API version 0x10".
-# The NGC base image ships its own cv2 binding under
-# /opt/conda/lib/python3.8/site-packages/cv2/python-3.8/, which
-# `pip uninstall` does not remove and which the cv2 loader prefers — wipe it
-# before installing.
-RUN rm -rf /opt/conda/lib/python3.8/site-packages/cv2 \
+# NGC 22.12 dropped conda; Python packages now live in
+# /usr/local/lib/python3.8/dist-packages/.
+# The NGC base image ships its own cv2 binding under that dist-packages dir,
+# which `pip uninstall` does not remove and which the cv2 loader prefers —
+# wipe it before installing.
+RUN rm -rf /usr/local/lib/python3.8/dist-packages/cv2 \
     && pip install --no-cache-dir \
         "numpy==1.22.4" \
         "numba==0.53.1" \
@@ -80,7 +85,7 @@ RUN rm -rf /opt/conda/lib/python3.8/site-packages/cv2 \
         filterpy \
         "pycuda==2022.2.2" \
     && sed -i 's|self.class_names = self.class_range.keys()|self.class_names = list(self.class_range.keys())|' \
-        /opt/conda/lib/python3.8/site-packages/nuscenes/eval/detection/data_classes.py
+        /usr/local/lib/python3.8/dist-packages/nuscenes/eval/detection/data_classes.py
 
 # --- MM-series stack (matches install.md, versions adjusted for torch 1.12 + cu116) ---
 ARG MMCV_VERSION=1.6.0
@@ -113,7 +118,7 @@ RUN git clone https://github.com/open-mmlab/mmdetection.git /workspace/mmdetecti
 # is the only line with cu116/torch1.12.0 support and works fine here in practice.
 RUN pip install --no-cache-dir "mmsegmentation==${MMSEG_VERSION}" \
     && sed -i "s/^MMCV_MAX = '1.5.0'/MMCV_MAX = '1.7.0'/" \
-        /opt/conda/lib/python3.8/site-packages/mmseg/__init__.py
+        /usr/local/lib/python3.8/dist-packages/mmseg/__init__.py
 
 # mmdetection3d
 # v0.17.1 was written against PyTorch <=1.10 and uses several APIs that were
